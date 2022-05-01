@@ -106,7 +106,7 @@ class QcFineProcessor(DataProcessor):
         """See base class."""
         return self._create_examples(os.path.join(data_dir, "test.tsv"), "test")
 
-    def get_labels(self, data_dir=None, set_type=None):
+    def get_labels(self):
         """See base class."""
         return ["UNK_UNK", "ABBR_abb", "ABBR_exp", "DESC_def", "DESC_desc", "DESC_manner", "DESC_reason", "ENTY_animal", "ENTY_body", "ENTY_color", "ENTY_cremat", "ENTY_currency", "ENTY_dismed", "ENTY_event", "ENTY_food", "ENTY_instru", "ENTY_lang", "ENTY_letter", "ENTY_other", "ENTY_plant", "ENTY_product", "ENTY_religion", "ENTY_sport", "ENTY_substance", "ENTY_symbol", "ENTY_techmeth", "ENTY_termeq", "ENTY_veh", "ENTY_word", "HUM_desc", "HUM_gr", "HUM_ind", "HUM_title", "LOC_city", "LOC_country", "LOC_mount", "LOC_other", "LOC_state", "NUM_code", "NUM_count", "NUM_date", "NUM_dist", "NUM_money", "NUM_ord", "NUM_other", "NUM_perc", "NUM_period", "NUM_speed", "NUM_temp", "NUM_volsize", "NUM_weight"]
 
@@ -129,61 +129,3 @@ class QcFineProcessor(DataProcessor):
             f.close()
 
         return examples
-        
-class GeneralProcessor(DataProcessor):
-    """Processor for the MultiNLI data set (GLUE version)."""
-
-    def get_labeled_examples(self, data_dir):
-        """See base class."""
-        examples,_ = self._create_examples(os.path.join(data_dir, "labeled.tsv"), "train")
-        return examples
-
-    def get_unlabeled_examples(self, data_dir):
-        """See base class."""
-        examples,_ = self._create_examples(os.path.join(data_dir, "unlabeled.tsv"), "train")
-        return examples
-
-    def get_test_examples(self, data_dir):
-        """See base class."""
-        examples,_ = self._create_examples(os.path.join(data_dir, "test.tsv"), "test")
-        return examples
-        
-    def get_OOS_test_examples(self, data_dir):
-        """See base class."""
-        examples,_ = self._create_examples(os.path.join(data_dir, "test_OOS.tsv"), "test")
-        return examples
-
-    def get_labels(self,data_dir,set_type='gan_bert'):
-        """See base class."""
-        _, unique_label_list = self._create_examples(os.path.join(data_dir, "labeled.tsv"), "train")
-        if set_type=='gan_bert':
-            unique_label_list.insert(0,'UNK_UNK')
-        print()
-        print("======================================================================================")
-        print("                                     Unique Label List                                ")
-        print(unique_label_list)
-        print("======================================================================================")
-        print()
-        return unique_label_list
-
-    def _create_examples(self, input_file, set_type):
-        """Creates examples for the training and dev sets."""
-        examples = []
-        unique_label_list = []
-
-        with open(input_file, 'r') as f:
-            contents = f.read()
-            file_as_list = contents.splitlines()
-            for line in file_as_list[1:]:
-                split = line.split(" ")
-                question = ' '.join(split[1:])
-
-                guid = "%s-%s" % (set_type, tokenization.convert_to_unicode(line))
-                text_a = tokenization.convert_to_unicode(question)
-                label = split[0]
-                if label not in unique_label_list:
-                    unique_label_list.append(label)
-                examples.append(InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
-            f.close()
-
-        return examples,unique_label_list

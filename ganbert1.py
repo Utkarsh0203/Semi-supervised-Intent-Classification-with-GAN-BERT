@@ -127,7 +127,7 @@ flags.DEFINE_float("label_rate", 1.0,
 
 flags.DEFINE_float("dropout_keep_rate", 0.9,
                    "Keep rate for dropout.")
-                   
+
 flags.DEFINE_bool("pred_OOS", False, "Whether to Test on OOS data or not")
 
 epsilon = 1e-8
@@ -245,7 +245,7 @@ def convert_single_example(ex_index, example, label_list, max_seq_length,
 
 
 def file_based_convert_examples_to_features(
-        labeled_examples, unlabeled_examples, label_list, max_seq_length, tokenizer, output_file, label_mask_rate, is_testing=False,type_=None):
+    labeled_examples, unlabeled_examples, label_list, max_seq_length, tokenizer, output_file, label_mask_rate, do_shuffle=True):
   """Convert a set of `InputExample`s to a TFRecord file."""
   all_examples = labeled_examples
   if unlabeled_examples:
@@ -290,8 +290,8 @@ def file_based_convert_examples_to_features(
 
   writer = tf.python_io.TFRecordWriter(output_file)
   written_examples = 0
-  if type_ != 'predict':
-      random.shuffle(to_write_examples)
+  if do_shuffle:
+    random.shuffle(to_write_examples)
   for tf_example in to_write_examples:
     writer.write(tf_example.SerializeToString())
     written_examples = written_examples + 1
@@ -619,7 +619,7 @@ def evaluate(estimator, label_rate, eval_examples, task_name, label_list, tokeni
         overall_result_file.write(str(label_rate) + " ")
         overall_result_file.write("%s = %s " % (key, str(result[key])))
     overall_result_file.write("\n")
-    
+
     if is_OOS:
         output_eval_file = os.path.join(FLAGS.output_dir, "OOS_eval_results_"+str(task_name)+".txt")
     else:
@@ -665,7 +665,7 @@ def main(_):
   label_list = processor.get_labels(FLAGS.data_dir)
 
   tokenizer = tokenization.FullTokenizer(
-      vocab_file=FLAGS.vocab_file, do_lower_case=FLAGS.do_lower_case)
+      vocab_file="cased_L-12_H-768_A-12/vocab.txt", do_lower_case=FLAGS.do_lower_case)
 
   tpu_cluster_resolver = None
   if FLAGS.use_tpu and FLAGS.tpu_name:
@@ -741,7 +741,7 @@ def main(_):
     eval_examples = processor.get_test_examples(FLAGS.data_dir)
     evaluate(estimator=estimator, label_rate=label_rate, eval_examples=eval_examples,
               task_name=task_name, label_list=label_list, tokenizer=tokenizer)
-    if FLAGS.pred_OOS:       
+    if FLAGS.pred_OOS:
         print("======================= Eval on OOS Test Data =======================")
         oos_eval_examples = processor.get_OOS_test_examples(FLAGS.data_dir)
         evaluate(estimator=estimator, label_rate=label_rate, eval_examples=oos_eval_examples,
@@ -793,7 +793,7 @@ def main(_):
         writer.write(output_line)
         num_written_lines += 1
     assert num_written_lines == num_actual_predict_examples
-    
+
     if FLAGS.pred_OOS:
         predict_examples = processor.get_OOS_test_examples(FLAGS.data_dir)
         num_actual_predict_examples = len(predict_examples)
@@ -804,27 +804,27 @@ def main(_):
           # later on.
           while len(predict_examples) % FLAGS.predict_batch_size != 0:
             predict_examples.append(PaddingInputExample())
-    
+
         predict_file = os.path.join(FLAGS.output_dir, "predict.tf_record")
         file_based_convert_examples_to_features(predict_examples, None, label_list,
                                                 FLAGS.max_seq_length, tokenizer,
                                                 predict_file, label_mask_rate=label_rate, type_ = 'predict')
-    
+
         tf.logging.info("***** Running prediction*****")
         tf.logging.info("  Num examples = %d (%d actual, %d padding)",
                         len(predict_examples), num_actual_predict_examples,
                         len(predict_examples) - num_actual_predict_examples)
         tf.logging.info("  Batch size = %d", FLAGS.predict_batch_size)
-    
+
         predict_drop_remainder = True if FLAGS.use_tpu else False
         predict_input_fn = file_based_input_fn_builder(
             input_file=predict_file,
             seq_length=FLAGS.max_seq_length,
             is_training=False,
             drop_remainder=predict_drop_remainder)
-    
+
         result = estimator.predict(input_fn=predict_input_fn)
-    
+
         output_predict_file = os.path.join(FLAGS.output_dir, "OOS_test_results.tsv")
         with tf.gfile.GFile(output_predict_file, "w") as writer:
           num_written_lines = 0
