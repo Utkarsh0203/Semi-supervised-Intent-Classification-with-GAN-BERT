@@ -80,7 +80,8 @@ flags.DEFINE_integer("eval_batch_size", 8, "Total batch size for eval.")
 
 flags.DEFINE_integer("predict_batch_size", 8, "Total batch size for predict.")
 
-flags.DEFINE_float("learning_rate", 5e-5, "The initial learning rate for Adam.")
+flags.DEFINE_float("learning_rate", 5e-5,
+                   "The initial learning rate for Adam.")
 
 flags.DEFINE_float("num_train_epochs", 3.0,
                    "Total number of training epochs to perform.")
@@ -127,7 +128,7 @@ flags.DEFINE_float("label_rate", 1.0,
 
 flags.DEFINE_float("dropout_keep_rate", 0.9,
                    "Keep rate for dropout.")
-                   
+
 flags.DEFINE_bool("pred_OOS", False, "Whether to Test on OOS data or not")
 
 epsilon = 1e-8
@@ -231,7 +232,8 @@ def convert_single_example(ex_index, example, label_list, max_seq_length,
         [tokenization.printable_text(x) for x in tokens]))
     tf.logging.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
     tf.logging.info("input_mask: %s" % " ".join([str(x) for x in input_mask]))
-    tf.logging.info("segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
+    tf.logging.info("segment_ids: %s" %
+                    " ".join([str(x) for x in segment_ids]))
     tf.logging.info("label: %s (id = %d)" % (example.label, label_id))
 
   feature = InputFeatures(
@@ -245,12 +247,13 @@ def convert_single_example(ex_index, example, label_list, max_seq_length,
 
 
 def file_based_convert_examples_to_features(
-    labeled_examples, unlabeled_examples, label_list, max_seq_length, tokenizer, output_file, label_mask_rate,type_):
+        labeled_examples, unlabeled_examples, label_list, max_seq_length, tokenizer, output_file, label_mask_rate, type_):
   """Convert a set of `InputExample`s to a TFRecord file."""
   all_examples = labeled_examples
   if unlabeled_examples:
     all_examples = all_examples + unlabeled_examples
-  label_masks = get_labeled_mask(mask_size=len(all_examples), labeled_size=len(labeled_examples))
+  label_masks = get_labeled_mask(mask_size=len(
+      all_examples), labeled_size=len(labeled_examples))
 
   to_write_examples = list()
   for ex_index, example in enumerate(all_examples):
@@ -280,7 +283,7 @@ def file_based_convert_examples_to_features(
         # IT SIMULATE A LABELED EXAMPLE
         if feature.label_mask:
             balance = int(1/label_mask_rate)
-            balance = int(math.log(balance,2))
+            balance = int(math.log(balance, 2))
             if balance < 1:
                 balance = 1
             for b in range(0, int(balance)):
@@ -369,8 +372,8 @@ def _truncate_seq_pair(tokens_a, tokens_b, max_length):
 
 
 ############ Defining Discriminator ############
-def discriminator(x, d_hidden_size, dkp, is_training, num_labels, num_hidden_discriminator = 1, reuse = False):
-    with tf.compat.v1.variable_scope('Discriminator', reuse = reuse):
+def discriminator(x, d_hidden_size, dkp, is_training, num_labels, num_hidden_discriminator=1, reuse=False):
+    with tf.compat.v1.variable_scope('Discriminator', reuse=reuse):
         layer_hidden = tf.nn.dropout(x, keep_prob=dkp)
         for i in range(num_hidden_discriminator):
             layer_hidden = tf.layers.dense(layer_hidden, d_hidden_size)
@@ -384,14 +387,14 @@ def discriminator(x, d_hidden_size, dkp, is_training, num_labels, num_hidden_dis
 
 
 ############ Defining Generator ############
-def generator(z, g_hidden_size, dkp, is_training, num_hidden_generator = 1, reuse = False):
-    with tf.compat.v1.variable_scope('Generator', reuse = reuse):
+def generator(z, g_hidden_size, dkp, is_training, num_hidden_generator=1, reuse=False):
+    with tf.compat.v1.variable_scope('Generator', reuse=reuse):
         layer_hidden = z
 
         for i in range(num_hidden_generator):
             layer_hidden = tf.layers.dense(layer_hidden, g_hidden_size)
             layer_hidden = tf.nn.leaky_relu(layer_hidden)
-            layer_hidden = tf.nn.dropout(layer_hidden, rate = 1 - dkp)
+            layer_hidden = tf.nn.dropout(layer_hidden, rate=1 - dkp)
         layer_hidden = tf.layers.dense(layer_hidden, g_hidden_size)
 
     return layer_hidden
@@ -426,27 +429,34 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
   one_hot_labels = tf.one_hot(labels, depth=num_labels, dtype=tf.float32)
 
   if is_training:
-    per_example_loss =  -tf.reduce_sum(one_hot_labels * log_probs, axis=-1)
+    per_example_loss = -tf.reduce_sum(one_hot_labels * log_probs, axis=-1)
     per_example_loss = tf.boolean_mask(per_example_loss, label_mask)
 
     labeled_example_count = tf.cast(tf.size(per_example_loss), tf.float32)
-    D_L_Supervised = tf.divide(tf.reduce_sum(per_example_loss), tf.maximum(labeled_example_count, 1))
+    D_L_Supervised = tf.divide(tf.reduce_sum(
+        per_example_loss), tf.maximum(labeled_example_count, 1))
   else:
     per_example_loss = -tf.reduce_sum(one_hot_labels * log_probs, axis=-1)
     D_L_Supervised = tf.reduce_mean(per_example_loss)
 
-  z = tf.random_uniform([FLAGS.train_batch_size, LATENT_Z], minval=0, maxval=1, dtype=tf.float32, seed=SEED, name=None)
-  x_g = generator(z, hidden_size, keep_prob, is_training=is_training, reuse=False)
-  D_fake_features, DU_fake_logits, DU_fake_prob = discriminator(x_g, hidden_size, keep_prob, is_training, num_labels, reuse=True)
-  
-  D_L_unsupervised1U = -1 * tf.reduce_mean(tf.math.log(1 - D_real_prob[:, 0] + epsilon))
-  
-  D_L_unsupervised2U = -1 * tf.reduce_mean(tf.math.log(DU_fake_prob[:, 0] + epsilon))
-  d_loss =  D_L_Supervised + D_L_unsupervised1U + D_L_unsupervised2U
-  
+  z = tf.random_uniform([FLAGS.train_batch_size, LATENT_Z],
+                        minval=0, maxval=1, dtype=tf.float32, seed=SEED, name=None)
+  x_g = generator(z, hidden_size, keep_prob,
+                  is_training=is_training, reuse=False)
+  D_fake_features, DU_fake_logits, DU_fake_prob = discriminator(
+      x_g, hidden_size, keep_prob, is_training, num_labels, reuse=True)
+
+  D_L_unsupervised1U = -1 * \
+      tf.reduce_mean(tf.math.log(1 - D_real_prob[:, 0] + epsilon))
+
+  D_L_unsupervised2U = -1 * \
+      tf.reduce_mean(tf.math.log(DU_fake_prob[:, 0] + epsilon))
+  d_loss = D_L_Supervised + D_L_unsupervised1U + D_L_unsupervised2U
+
   g_loss = -1 * tf.reduce_mean(tf.math.log(1 - DU_fake_prob[:, 0] + epsilon))
 
-  G_feat_match = tf.reduce_mean(tf.square(tf.reduce_mean(D_real_features, axis=0) - tf.reduce_mean(D_fake_features, axis=0)))
+  G_feat_match = tf.reduce_mean(tf.square(tf.reduce_mean(
+      D_real_features, axis=0) - tf.reduce_mean(D_fake_features, axis=0)))
   g_loss = g_loss + G_feat_match
 
   return (d_loss, g_loss, per_example_loss, logits, probabilities)
@@ -491,7 +501,7 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
     scaffold_fn = None
     if init_checkpoint:
       (assignment_map, initialized_variable_names
-      ) = modeling.get_assignment_map_from_checkpoint(tvars, init_checkpoint)
+       ) = modeling.get_assignment_map_from_checkpoint(tvars, init_checkpoint)
       if use_tpu:
 
         def tpu_scaffold():
@@ -514,13 +524,13 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
     if mode == tf.estimator.ModeKeys.TRAIN:
 
       d_train_op = optimization.create_optimizer("d", d_vars,
-          d_loss, learning_rate, num_train_steps, num_warmup_steps, use_tpu)
-
+                                                 d_loss, learning_rate, num_train_steps, num_warmup_steps, use_tpu)
 
       g_train_op = optimization.create_optimizer("g", g_vars,
-          g_loss, learning_rate, num_train_steps, num_warmup_steps, use_tpu)
+                                                 g_loss, learning_rate, num_train_steps, num_warmup_steps, use_tpu)
 
-      logging_hook = tf.train.LoggingTensorHook({"d_loss": d_loss, "g_loss": g_loss, "per_example_loss": per_example_loss}, every_n_iter=1)
+      logging_hook = tf.train.LoggingTensorHook(
+          {"d_loss": d_loss, "g_loss": g_loss, "per_example_loss": per_example_loss}, every_n_iter=1)
 
       output_spec = tf.contrib.tpu.TPUEstimatorSpec(
           mode=mode,
@@ -538,10 +548,11 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
         recall = tf_metrics.recall(labels=label_ids, predictions=predictions, num_classes=num_labels,
                                    weights=is_real_example)
         f1_micro = tf_metrics.f1(labels=label_ids, predictions=predictions, num_classes=num_labels,
-                           weights=is_real_example, average='micro')
+                                 weights=is_real_example, average='micro')
         f1_macro = tf_metrics.f1(labels=label_ids, predictions=predictions, num_classes=num_labels,
                                  weights=is_real_example, average='macro')
-        loss = tf.metrics.mean(values=per_example_loss, weights=is_real_example)
+        loss = tf.metrics.mean(values=per_example_loss,
+                               weights=is_real_example)
         return {
             "eval_accuracy": accuracy,
             "eval_precision": precision,
@@ -569,13 +580,13 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
 
 
 def get_labeled_mask(mask_size, labeled_size):
-    labeled_mask = np.zeros([mask_size], dtype = np.int16)
+    labeled_mask = np.zeros([mask_size], dtype=np.int16)
     labeled_mask[range(labeled_size)] = 1
     labeled_mask = 0.5 < labeled_mask
     return labeled_mask
 
 
-def evaluate(estimator, label_rate, eval_examples, task_name, label_list, tokenizer,is_OOS=False):
+def evaluate(estimator, label_rate, eval_examples, task_name, label_list, tokenizer, is_OOS=False):
     num_actual_eval_examples = len(eval_examples)
     if FLAGS.use_tpu:
         # TPU requires a fixed batch size for all batches, therefore the number
@@ -586,9 +597,10 @@ def evaluate(estimator, label_rate, eval_examples, task_name, label_list, tokeni
         while len(eval_examples) % FLAGS.eval_batch_size != 0:
             eval_examples.append(PaddingInputExample())
 
-    eval_file = os.path.join(FLAGS.output_dir, "eval_"+str(task_name)+".tf_record")
+    eval_file = os.path.join(
+        FLAGS.output_dir, "eval_"+str(task_name)+".tf_record")
     file_based_convert_examples_to_features(
-        eval_examples, None, label_list, FLAGS.max_seq_length, tokenizer, eval_file, label_mask_rate=1, type_ = 'eval')
+        eval_examples, None, label_list, FLAGS.max_seq_length, tokenizer, eval_file, label_mask_rate=1, type_='eval')
 
     tf.logging.info("***** Running evaluation *****")
     tf.logging.info("  Num examples = %d (%d actual, %d padding)",
@@ -613,17 +625,20 @@ def evaluate(estimator, label_rate, eval_examples, task_name, label_list, tokeni
 
     result = estimator.evaluate(input_fn=eval_input_fn, steps=eval_steps)
 
-    overall_result_file = open(task_name + "_statistics_GANBERT" + str(label_rate) + ".txt", "a+")
+    overall_result_file = open(
+        task_name + "_statistics_GANBERT" + str(label_rate) + ".txt", "a+")
 
     for key in sorted(result.keys()):
         overall_result_file.write(str(label_rate) + " ")
         overall_result_file.write("%s = %s " % (key, str(result[key])))
     overall_result_file.write("\n")
-    
+
     if is_OOS:
-        output_eval_file = os.path.join(FLAGS.output_dir, "OOS_eval_results_"+str(task_name)+".txt")
+        output_eval_file = os.path.join(
+            FLAGS.output_dir, "OOS_eval_results_"+str(task_name)+".txt")
     else:
-        output_eval_file = os.path.join(FLAGS.output_dir, "eval_results_"+str(task_name)+".txt")
+        output_eval_file = os.path.join(
+            FLAGS.output_dir, "eval_results_"+str(task_name)+".txt")
     with tf.gfile.GFile(output_eval_file, "w") as writer:
         tf.logging.info("***** Eval results *****")
         for key in sorted(result.keys()):
@@ -675,14 +690,14 @@ def main(_):
   is_per_host = tf.contrib.tpu.InputPipelineConfig.PER_HOST_V2
 
   run_config = tf.contrib.tpu.RunConfig(
-    cluster=tpu_cluster_resolver,
-    master=FLAGS.master,
-    model_dir=FLAGS.output_dir,
-    save_checkpoints_steps=FLAGS.save_checkpoints_steps,
-    tpu_config=tf.contrib.tpu.TPUConfig(
-        iterations_per_loop=FLAGS.iterations_per_loop,
-        num_shards=FLAGS.num_tpu_cores,
-        per_host_input_for_training=is_per_host))
+      cluster=tpu_cluster_resolver,
+      master=FLAGS.master,
+      model_dir=FLAGS.output_dir,
+      save_checkpoints_steps=FLAGS.save_checkpoints_steps,
+      tpu_config=tf.contrib.tpu.TPUConfig(
+          iterations_per_loop=FLAGS.iterations_per_loop,
+          num_shards=FLAGS.num_tpu_cores,
+          per_host_input_for_training=is_per_host))
 
   num_train_steps = None
   num_warmup_steps = None
@@ -693,7 +708,7 @@ def main(_):
     num_train_examples = len(labeled_examples) + len(unlabeled_examples)
 
     num_train_steps = int(
-         num_train_examples / FLAGS.train_batch_size * FLAGS.num_train_epochs)
+        num_train_examples / FLAGS.train_batch_size * FLAGS.num_train_epochs)
     num_warmup_steps = int(num_train_steps * FLAGS.warmup_proportion)
 
   model_fn = model_fn_builder(
@@ -723,10 +738,11 @@ def main(_):
         label_mask_rate=label_rate, type_='train')
 
     real_num_train_steps = int(
-         num_written_examples / FLAGS.train_batch_size * FLAGS.num_train_epochs)
+        num_written_examples / FLAGS.train_batch_size * FLAGS.num_train_epochs)
 
     tf.logging.info("***** Running training *****")
-    tf.logging.info("  Num examples = %d", len(labeled_examples) + len(unlabeled_examples))
+    tf.logging.info("  Num examples = %d", len(
+        labeled_examples) + len(unlabeled_examples))
     tf.logging.info("  Batch size = %d", FLAGS.train_batch_size)
     tf.logging.info("  Num steps = %d", real_num_train_steps)
     train_input_fn = file_based_input_fn_builder(
@@ -740,12 +756,12 @@ def main(_):
     print("======================= Eval on Test Data =======================")
     eval_examples = processor.get_test_examples(FLAGS.data_dir)
     evaluate(estimator=estimator, label_rate=label_rate, eval_examples=eval_examples,
-              task_name=task_name, label_list=label_list, tokenizer=tokenizer)
-    if FLAGS.pred_OOS:       
+             task_name=task_name, label_list=label_list, tokenizer=tokenizer)
+    if FLAGS.pred_OOS:
         print("======================= Eval on OOS Test Data =======================")
         oos_eval_examples = processor.get_OOS_test_examples(FLAGS.data_dir)
         evaluate(estimator=estimator, label_rate=label_rate, eval_examples=oos_eval_examples,
-                  task_name=task_name, label_list=label_list, tokenizer=tokenizer,is_OOS=True)
+                 task_name=task_name, label_list=label_list, tokenizer=tokenizer, is_OOS=True)
 
   if FLAGS.do_predict:
     predict_examples = processor.get_test_examples(FLAGS.data_dir)
@@ -761,7 +777,7 @@ def main(_):
     predict_file = os.path.join(FLAGS.output_dir, "predict.tf_record")
     file_based_convert_examples_to_features(predict_examples, None, label_list,
                                             FLAGS.max_seq_length, tokenizer,
-                                            predict_file, label_mask_rate=label_rate, type_ = 'predict')
+                                            predict_file, label_mask_rate=label_rate, type_='predict')
 
     tf.logging.info("***** Running prediction*****")
     tf.logging.info("  Num examples = %d (%d actual, %d padding)",
@@ -778,7 +794,6 @@ def main(_):
 
     result = estimator.predict(input_fn=predict_input_fn)
 
-
     output_predict_file = os.path.join(FLAGS.output_dir, "test_results.tsv")
     with tf.gfile.GFile(output_predict_file, "w") as writer:
       num_written_lines = 0
@@ -793,7 +808,7 @@ def main(_):
         writer.write(output_line)
         num_written_lines += 1
     assert num_written_lines == num_actual_predict_examples
-    
+
     if FLAGS.pred_OOS:
         predict_examples = processor.get_OOS_test_examples(FLAGS.data_dir)
         num_actual_predict_examples = len(predict_examples)
@@ -804,29 +819,29 @@ def main(_):
           # later on.
           while len(predict_examples) % FLAGS.predict_batch_size != 0:
             predict_examples.append(PaddingInputExample())
-    
+
         predict_file = os.path.join(FLAGS.output_dir, "predict.tf_record")
         file_based_convert_examples_to_features(predict_examples, None, label_list,
                                                 FLAGS.max_seq_length, tokenizer,
-                                                predict_file, label_mask_rate=label_rate, type_ = 'predict')
-    
+                                                predict_file, label_mask_rate=label_rate, type_='predict')
+
         tf.logging.info("***** Running prediction*****")
         tf.logging.info("  Num examples = %d (%d actual, %d padding)",
                         len(predict_examples), num_actual_predict_examples,
                         len(predict_examples) - num_actual_predict_examples)
         tf.logging.info("  Batch size = %d", FLAGS.predict_batch_size)
-    
+
         predict_drop_remainder = True if FLAGS.use_tpu else False
         predict_input_fn = file_based_input_fn_builder(
             input_file=predict_file,
             seq_length=FLAGS.max_seq_length,
             is_training=False,
             drop_remainder=predict_drop_remainder)
-    
+
         result = estimator.predict(input_fn=predict_input_fn)
-    
-    
-        output_predict_file = os.path.join(FLAGS.output_dir, "OOS_test_results.tsv")
+
+        output_predict_file = os.path.join(
+            FLAGS.output_dir, "OOS_test_results.tsv")
         with tf.gfile.GFile(output_predict_file, "w") as writer:
           num_written_lines = 0
           tf.logging.info("***** Predict results *****")
